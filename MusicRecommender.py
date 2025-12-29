@@ -16,6 +16,8 @@ class MusicRecommendationSystem:
         self.pca = PCA(n_components=2) 
 
         self.user_centroid_scaled = None 
+        self.user_profile_vector = None 
+        self.last_recommendations = None
         
         self.feature_cols = [
             'acousticness', 'danceability', 'energy', 'instrumentalness', 
@@ -23,7 +25,6 @@ class MusicRecommendationSystem:
         ]
         
     def load_data(self):
-        """Verileri yükler ve temizler."""
         try:
             self.df = pd.read_csv(self.data_path)
 
@@ -33,52 +34,31 @@ class MusicRecommendationSystem:
             print("[!] Dosya bulunamadı.")
 
     def preprocess_data(self):
-        """Veriyi normalize eder."""
         print("[-] Veri standardizasyonu yapılıyor...")
         X = self.df[self.feature_cols]
         self.scaled_features = self.scaler.fit_transform(X)
         print("[+] Standardizasyon tamamlandı.")
 
-    def train_model(self, n_clusters=10):
-
+    def train_model(self, n_clusters=300):
         print(f"[-] {n_clusters} küme ile eğitim başladı...")
         self.kmeans = KMeans(n_clusters=n_clusters, init='k-means++', n_init=10, max_iter=300, random_state=42)
         self.kmeans.fit(self.scaled_features)
         self.df['cluster'] = self.kmeans.labels_
         print("[+] Model eğitildi.")
 
-    def print_features_stats(self, features_series, title="Özellikler"):
-
-        print(f"\n--- {title} ---")
-
-        if isinstance(features_series, pd.DataFrame):
-            data = features_series.iloc[0].to_dict()
-        else:
-            data = features_series.to_dict()
-
-        for key in self.feature_cols:
-            if key in data:
-                print(f"{key.capitalize():<16}: {data[key]:.4f}")
-        print("-" * 30)
-
-    def recommend_songs(self, song_list, n_recommendations=5):
+    def recommend_songs(self, song_list, n_recommendations=20):
 
         song_list_lower = [s.lower() for s in song_list]
         playlist_df = self.df[self.df['name'].str.lower().isin(song_list_lower)]
         
-        if len(playlist_df) == 0:
-            print("[!] Şarkılar bulunamadı.")
-            return
+        print(f"\nAnaliz edilen şarkı sayısı: {len(playlist_df)}")
 
-        print(f"\n[+] Analiz edilen şarkı sayısı: {len(playlist_df)}")
+        self.user_profile_vector = playlist_df[self.feature_cols].median(axis=0)
 
-        user_profile_vector = playlist_df[self.feature_cols].mean(axis=0)
-
-        user_profile_df = pd.DataFrame([user_profile_vector.values], columns=self.feature_cols)
+        user_profile_df = pd.DataFrame([self.user_profile_vector.values], columns=self.feature_cols)
         user_profile_scaled = self.scaler.transform(user_profile_df)
-        
  
-        self.print_features_comparison(user_profile_vector, user_profile_scaled)
+        self.print_features_comparison(self.user_profile_vector, user_profile_scaled)
     
         self.user_centroid_scaled = user_profile_scaled
 
@@ -93,6 +73,7 @@ class MusicRecommendationSystem:
         
         if not recommendations.empty:
             rec_songs = recommendations.sample(n=min(n_recommendations, len(recommendations)))
+            self.last_recommendations = rec_songs
             print("\n--- ÖNERİLEN ŞARKILAR ---")
             print(rec_songs[['name', 'artists', 'popularity']].to_string(index=False))
         else:
@@ -143,4 +124,46 @@ class MusicRecommendationSystem:
         plt.ylabel('Principal Component 2')
         plt.legend()
         plt.grid(True, alpha=0.3)
+        plt.show()
+
+    def visualize_correlation(self):
+        plt.figure(figsize=(12, 10))
+        corr = self.df[self.feature_cols].corr()
+        sns.heatmap(corr, annot=True, cmap='coolwarm', fmt=".2f", linewidths=0.5)
+        plt.title('Müzik Özellikleri Korelasyon Matrisi')
+        plt.show()
+
+    def visualize_radar(self):
+        if self.user_profile_vector is None or self.last_recommendations is None:
+            print("[!] Hata: Önce şarkı önerisi (recommend_songs) yapmalısınız.")
+            return
+
+        print("\n[-] Radar grafiği hazırlanıyor...")
+        
+        categories = ['acousticness', 'danceability', 'energy', 
+                     'instrumentalness', 'liveness', 'speechiness', 'valence']
+        
+        user_values = self.user_profile_vector[categories].values.flatten().tolist()
+        user_values += user_values[:1] 
+
+        rec_mean = self.last_recommendations[categories].mean(axis=0)
+        rec_values = rec_mean.values.flatten().tolist()
+        rec_values += rec_values[:1] 
+
+        angles = [n / float(len(categories)) * 2 * np.pi for n in range(len(categories))]
+        angles += angles[:1]
+
+        plt.figure(figsize=(8, 8))
+        ax = plt.subplot(111, polar=True)
+
+        plt.xticks(angles[:-1], [c.capitalize() for c in categories], color='grey', size=10)
+ 
+        ax.plot(angles, user_values, linewidth=2, linestyle='solid', label="Sizin Tarzınız (Girdi)", color='blue')
+        ax.fill(angles, user_values, 'blue', alpha=0.1)
+
+        ax.plot(angles, rec_values, linewidth=2, linestyle='solid', label="Sistem Önerisi (Çıktı)", color='red')
+        ax.fill(angles, rec_values, 'red', alpha=0.1)
+        
+        plt.title('Girdi vs Çıktı Karşılaştırması (Eski vs Yeni)', size=15, y=1.1)
+        plt.legend(loc='upper right', bbox_to_anchor=(0.1, 0.1))
         plt.show()
