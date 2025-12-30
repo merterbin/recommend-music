@@ -1,19 +1,20 @@
 import random
 from MusicRecommender import *
 
-recommender = MusicRecommendationSystem(data_path='recommendation-dataset/data.csv', genre_path='recommendation-dataset/data_by_genres.csv')
+# Datayı oku ve hazırla
+recommender = MusicRecommendationSystem(data_path='recommendation-dataset/data.csv')
 recommender.load_data()
 recommender.preprocess_data()
 
 
 recommender.visualize_correlation()
+# K-Means modelini eğit
+recommender.train_model(n_clusters=291)
 
-recommender.train_model(n_clusters=300)
-
+# Rastgele 60 şarkı seç
 songList = random.sample(recommender.df['name'].tolist(), 60)
 
-
-print("\n--- Playlist Analizi Başlıyor ---")
+# Şarkı önerisi yap
 recommender.recommend_songs(song_list= songList, n_recommendations=5)
 
 recommender.visualize_clusters()
